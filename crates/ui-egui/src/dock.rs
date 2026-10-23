@@ -499,6 +499,94 @@ fn strips_id() -> egui::Id {
     egui::Id::new("dock-strip-rects")
 }
 
+/// Give the Color group more room for RGB controls using only the flexible dock filler.
+/// Keep manually resized Color and neighbour groups unchanged. In short windows,
+/// existing dock scrolling remains available instead of overriding saved geometry.
+fn reserve_rgb_color_space(layout: &DockLayout, heights: &mut [(Group, f32)], show_rgb: bool) {
+    if !show_rgb || layout.is_collapsed(Group::Color) || layout.heights.contains_key(&Group::Color) {
+        return;
+    }
+    let Some(color) = heights.iter().position(|(g, _)| *g == Group::Color) else { return };
+    let Some(filler) = heights.iter().rposition(|(g, _)| !layout.is_collapsed(*g)) else { return };
+    if filler <= color {
+        return;
+    }
+    // A saved size on the filler can come from a different dock order.
+    // Do not silently change that manually configured neighbour.
+    if layout.heights.contains_key(&heights[filler].0) {
+        return;
+    }
+    let (before_filler, at_filler) = heights.split_at_mut(filler);
+    let minimum = at_filler[0].0.min_height();
+    let color_height = &mut before_filler[color].1;
+    let filler_height = &mut at_filler[0].1;
+    // 310 pt budgets for the spectrum, readout, three RGB slider rows, mode selector,
+    // and dock spacing; constrained docks retain their existing scrolling.
+    let extra = (310.0 - *color_height).max(0.0).min((*filler_height - minimum).max(0.0));
+    *color_height += extra;
+    *filler_height -= extra;
+}
+
+#[cfg(test)]
+mod rgb_color_space_tests {
+    use super::*;
+
+    /// RGB can borrow height from the filler without changing total dock height.
+    #[test]
+    fn rgb_color_group_grows_only_when_there_is_room() {
+        let layout = DockLayout::default();
+        let mut roomy = [(Group::Color, 190.0), (Group::Layers, 500.0)];
+        reserve_rgb_color_space(&layout, &mut roomy, true);
+        assert_eq!(roomy, [(Group::Color, 310.0), (Group::Layers, 380.0)]);
+        let mut cramped = [(Group::Color, 190.0), (Group::Layers, 150.0)];
+        reserve_rgb_color_space(&layout, &mut cramped, true);
+        assert_eq!(cramped, [(Group::Color, 200.0), (Group::Layers, 140.0)]);
+    }
+
+    /// Other modes, manually sized panels and collapsed groups keep their geometry.
+    #[test]
+    fn rgb_color_group_respects_user_layout_and_other_modes() {
+        let mut heights = [(Group::Color, 190.0), (Group::Layers, 500.0)];
+        reserve_rgb_color_space(&DockLayout::default(), &mut heights, false);
+        assert_eq!(heights, [(Group::Color, 190.0), (Group::Layers, 500.0)]);
+        let mut manual = DockLayout::default();
+        manual.heights.insert(Group::Color, 190.0);
+        reserve_rgb_color_space(&manual, &mut heights, true);
+        assert_eq!(heights, [(Group::Color, 190.0), (Group::Layers, 500.0)]);
+        let mut collapsed = DockLayout::default();
+        collapsed.set_collapsed(Group::Color, true);
+        reserve_rgb_color_space(&collapsed, &mut heights, true);
+        assert_eq!(heights, [(Group::Color, 190.0), (Group::Layers, 500.0)]);
+    }
+    /// A filler which was manually sized in another layout order must not lose height.
+    #[test]
+    fn rgb_color_group_does_not_shrink_manually_sized_filler() {
+        let mut layout = DockLayout::default();
+        layout.heights.insert(Group::Layers, 380.0);
+        let mut heights = [(Group::Color, 190.0), (Group::Layers, 500.0)];
+        reserve_rgb_color_space(&layout, &mut heights, true);
+        assert_eq!(heights, [(Group::Color, 190.0), (Group::Layers, 500.0)]);
+    }
+
+    /// A manually sized middle group stays fixed when the last group can flex.
+    #[test]
+    fn rgb_color_group_preserves_manually_sized_middle_group() {
+        let mut layout = DockLayout::default();
+        layout.heights.insert(Group::Properties, 205.0);
+        let mut heights = [(Group::Color, 190.0), (Group::Properties, 205.0), (Group::Layers, 400.0)];
+        reserve_rgb_color_space(&layout, &mut heights, true);
+        assert_eq!(heights, [(Group::Color, 310.0), (Group::Properties, 205.0), (Group::Layers, 280.0)]);
+    }
+
+    /// With no filler below Color, its height cannot be borrowed from another panel.
+    #[test]
+    fn rgb_color_group_last_in_order_does_not_change_height() {
+        let layout = DockLayout::default();
+        let mut heights = [(Group::Properties, 205.0), (Group::Color, 420.0)];
+        reserve_rgb_color_space(&layout, &mut heights, true);
+        assert_eq!(heights, [(Group::Properties, 205.0), (Group::Color, 420.0)]);
+    }
+}
 /// Draw the `shown` groups (any order; the layout decides) filling `ui`. `body` draws one
 /// group's tab content.
 pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui, shown: &[Group], mut body: impl FnMut(&mut PhotocraftApp, &mut egui::Ui, Group, usize)) {
@@ -514,7 +602,9 @@ pub fn show(app: &mut PhotocraftApp, ui: &mut egui::Ui, shown: &[Group], mut bod
     let strip = if t.pro { 28.0 } else { 40.0 };
     let order: Vec<Group> = app.ui.dock.order().into_iter().filter(|g| shown.contains(g)).collect();
     let area = ui.available_rect_before_wrap();
-    let heights = app.ui.dock.heights_for(&order, area.height(), strip);
+    let mut heights = app.ui.dock.heights_for(&order, area.height(), strip);
+    let show_rgb = t.pro && app.ui.dock_tabs.color == 0 && app.ui.color_panel.slider_mode == crate::state::ColorPanelSliderMode::Rgb;
+    reserve_rgb_color_space(&app.ui.dock, &mut heights, show_rgb);
     let locked = app.session.prefs().workspace_locked;
     let rects = rects_after_layout(&heights, area);
     let mut actions: Vec<Action> = Vec::new();

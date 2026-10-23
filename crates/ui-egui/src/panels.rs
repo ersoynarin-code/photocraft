@@ -4212,13 +4212,15 @@ pub(crate) fn offer_color_field_fill(ui: &egui::Ui, pro: bool, group: crate::doc
     }
 }
 
-/// Height of the Color field: the group body's height (when docked) less the hex/RGB readout,
-/// which folds onto a second line in a narrow dock. 120 pt when nothing sets a height.
-fn color_field_height(avail: Option<f32>, width: f32) -> f32 {
-    let reserve = 32.0 + if width < 280.0 { 26.0 } else { 0.0 };
+/// Height of the Color field: the dock body less readout and, in RGB mode, slider rows
+/// and mode selector. The 48 pt RGB floor retains an operable spectrum in a short group;
+/// short groups use the existing dock scroll area. Default is 120 pt without a dock.
+fn color_field_height(avail: Option<f32>, width: f32, rgb: bool) -> f32 {
+    // Reserve three slider rows, the RGB/HSB mode menu and vertical spacing (#8723, #8845).
+    let reserve = 32.0 + if width < 280.0 { 26.0 } else { 0.0 } + if rgb { 150.0 } else { 0.0 };
     // When docked, shrink the field so the hex/RGB readout stays in view (#6885). A 120 pt floor
     // here pushed the readout below the scroll area in a compact Color group.
-    avail.filter(|a| a.is_finite()).map_or(120.0, |a| (a - reserve).clamp(0.0, 2000.0))
+    avail.filter(|a| a.is_finite()).map_or(120.0, |a| (a - reserve).clamp(if rgb { 48.0 } else { 0.0 }, 2000.0))
 }
 
 /// The colour the SV field draws for `hsva`, with what the field showed last (`hue`, `saturation`)
@@ -4253,7 +4255,7 @@ fn color_field(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // hex/RGB readout (which folds onto a second line in a narrow dock). Without a dock, 120 pt.
     // Only Photoshop's themes stretch it over the group: the other themes put sliders under it.
     let fill = if t.pro { ui.data(|d| d.get_temp::<f32>(color_field_fill_id())) } else { None };
-    let h = color_field_height(fill, w);
+    let h = color_field_height(fill, w, t.pro && app.ui.color_panel.slider_mode == ColorPanelSliderMode::Rgb);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         let (chips, _) = ui.allocate_exact_size(vec2(38.0, h), Sense::hover());
@@ -5196,12 +5198,17 @@ mod color_tests {
     /// The Color field fills the dock group, shrinks to leave room for the readout in a short group, and ignores a bad height.
     #[test]
     fn color_field_height_fills_the_group() {
-        assert_eq!(color_field_height(None, 300.0), 120.0);
-        assert_eq!(color_field_height(Some(500.0), 300.0), 468.0);
-        assert_eq!(color_field_height(Some(500.0), 200.0), 442.0);
-        assert_eq!(color_field_height(Some(60.0), 300.0), 28.0);
-        assert_eq!(color_field_height(Some(f32::NAN), 300.0), 120.0);
-        assert_eq!(color_field_height(Some(1.0e9), 300.0), 2000.0);
+        assert_eq!(color_field_height(None, 300.0, false), 120.0);
+        assert_eq!(color_field_height(Some(500.0), 300.0, false), 468.0);
+        assert_eq!(color_field_height(Some(500.0), 200.0, false), 442.0);
+        assert_eq!(color_field_height(Some(60.0), 300.0, false), 28.0);
+        assert_eq!(color_field_height(Some(f32::NAN), 300.0, false), 120.0);
+        assert_eq!(color_field_height(Some(1.0e9), 300.0, false), 2000.0);
+        assert_eq!(color_field_height(Some(500.0), 300.0, true), 318.0);
+        assert_eq!(color_field_height(Some(150.0), 300.0, true), 48.0);
+        assert_eq!(color_field_height(Some(260.0), 300.0, true), 78.0);
+        assert_eq!(color_field_height(Some(500.0), 200.0, true), 292.0);
+        assert_eq!(color_field_height(Some(130.0), 200.0, true), 48.0);
     }
 
     /// A squeezed Color group still shows the hex/RGB readout, not only the spectrum field (#6885).
