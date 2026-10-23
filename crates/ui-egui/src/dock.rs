@@ -586,6 +586,33 @@ mod rgb_color_space_tests {
         reserve_rgb_color_space(&layout, &mut heights, true);
         assert_eq!(heights, [(Group::Properties, 205.0), (Group::Color, 420.0)]);
     }
+
+    /// Resizing an unrelated splitter must not save Color's derived RGB height.
+    #[test]
+    fn unrelated_splitter_does_not_persist_automatic_rgb_height() {
+        let mut layout = DockLayout::default();
+        let heights = [(Group::Color, 310.0), (Group::Properties, 205.0), (Group::Layers, 500.0)];
+        resize(&mut layout, &heights, 1, 15.0);
+        assert!(!layout.heights.contains_key(&Group::Color));
+    }
+
+    /// Dragging the splitter below Color is an explicit Color resize.
+    #[test]
+    fn color_lower_splitter_keeps_explicit_height() {
+        let mut layout = DockLayout::default();
+        let heights = [(Group::Color, 310.0), (Group::Layers, 500.0)];
+        resize(&mut layout, &heights, 0, 15.0);
+        assert!(layout.heights.contains_key(&Group::Color));
+    }
+
+    /// Dragging the splitter above Color must also preserve the user's choice.
+    #[test]
+    fn color_upper_splitter_keeps_explicit_height() {
+        let mut layout = DockLayout::default();
+        let heights = [(Group::Properties, 205.0), (Group::Color, 310.0), (Group::Layers, 500.0)];
+        resize(&mut layout, &heights, 0, 15.0);
+        assert!(layout.heights.contains_key(&Group::Color));
+    }
 }
 /// Draw the `shown` groups (any order; the layout decides) filling `ui`. `body` draws one
 /// group's tab content.
@@ -879,10 +906,13 @@ fn resize(layout: &mut DockLayout, heights: &[(Group, f32)], i: usize, dy: f32) 
     // next expanded group at the expense of `i` and the groups above it.
     let (grow, shrink): (usize, Vec<usize>) =
         if dy > 0.0 { (i, (j..heights.len()).filter(expanded).collect()) } else { (j, (0..=i).rev().filter(expanded).collect()) };
+    // RGB may enlarge Color temporarily. Only a splitter bordering Color
+    // represents an explicit user size for that group.
+    let color_is_dragged = heights.get(i).is_some_and(|(g, _)| *g == Group::Color) || heights.get(j).is_some_and(|(g, _)| *g == Group::Color);
     // The first drag pins the other groups at the heights they show, so groups still at their
     // defaults (which give way to the filler) don't shift while this one is resized.
     for (k, (o, oh)) in heights.iter().enumerate() {
-        if Some(k) != filler && !layout.is_collapsed(*o) {
+        if Some(k) != filler && !layout.is_collapsed(*o) && (color_is_dragged || *o != Group::Color) {
             layout.heights.entry(*o).or_insert(*oh);
         }
     }
@@ -894,12 +924,13 @@ fn resize(layout: &mut DockLayout, heights: &[(Group, f32)], i: usize, dy: f32) 
         let Some(&(o, oh)) = heights.get(k) else { continue };
         let give = (oh - o.min_height()).max(0.0).min(left);
         left -= give;
-        if Some(k) != filler {
+        if Some(k) != filler && (color_is_dragged || o != Group::Color) {
             layout.heights.insert(o, oh - give);
         }
     }
     if let Some(&(o, oh)) = heights.get(grow)
         && Some(grow) != filler
+        && (color_is_dragged || o != Group::Color)
     {
         layout.heights.insert(o, oh + (dy.abs() - left));
     }

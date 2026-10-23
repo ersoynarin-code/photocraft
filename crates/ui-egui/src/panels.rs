@@ -4216,8 +4216,8 @@ pub(crate) fn offer_color_field_fill(ui: &egui::Ui, pro: bool, group: crate::doc
 /// and mode selector. The 48 pt RGB floor retains an operable spectrum in a short group;
 /// short groups use the existing dock scroll area. Default is 120 pt without a dock.
 fn color_field_height(avail: Option<f32>, width: f32, rgb: bool) -> f32 {
-    // Reserve three slider rows, the RGB/HSB mode menu and vertical spacing (#8723, #8845).
-    let reserve = 32.0 + if width < 280.0 { 26.0 } else { 0.0 } + if rgb { 150.0 } else { 0.0 };
+    // Reserve three slider rows, 24 pt for the RGB/HSB selector, and spacing (#8723, #8845).
+    let reserve = 32.0 + if width < 280.0 { 26.0 } else { 0.0 } + if rgb { 174.0 } else { 0.0 };
     // When docked, shrink the field so the hex/RGB readout stays in view (#6885). A 120 pt floor
     // here pushed the readout below the scroll area in a compact Color group.
     avail.filter(|a| a.is_finite()).map_or(120.0, |a| (a - reserve).clamp(if rgb { 48.0 } else { 0.0 }, 2000.0))
@@ -5204,10 +5204,12 @@ mod color_tests {
         assert_eq!(color_field_height(Some(60.0), 300.0, false), 28.0);
         assert_eq!(color_field_height(Some(f32::NAN), 300.0, false), 120.0);
         assert_eq!(color_field_height(Some(1.0e9), 300.0, false), 2000.0);
-        assert_eq!(color_field_height(Some(500.0), 300.0, true), 318.0);
+        assert_eq!(color_field_height(Some(500.0), 300.0, true), 294.0);
         assert_eq!(color_field_height(Some(150.0), 300.0, true), 48.0);
-        assert_eq!(color_field_height(Some(260.0), 300.0, true), 78.0);
-        assert_eq!(color_field_height(Some(500.0), 200.0, true), 292.0);
+        assert_eq!(color_field_height(Some(260.0), 300.0, true), 54.0);
+        // At the 310 pt RGB target, the selector fits without borrowing from the spectrum.
+        assert_eq!(color_field_height(Some(310.0), 300.0, true), 104.0);
+        assert_eq!(color_field_height(Some(500.0), 200.0, true), 268.0);
         assert_eq!(color_field_height(Some(130.0), 200.0, true), 48.0);
     }
 
