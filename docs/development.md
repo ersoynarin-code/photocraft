@@ -430,6 +430,7 @@ cargo xtask perf --update-baseline   # only a complete, fresh and qualified run 
   from the tree (never-crash attribute coverage, `docs/parity-checklist.md`).
 
 **Baseline integrity.** `--update-baseline` rejects partial `--bench` runs, `--reuse`, skipped or failed benches, missing or invalid scenario statistics, unavailable load/core telemetry, and start/end load average above 1.5 times the available logical CPU count. This is a conservative contamination guard, not proof of noise-free benchmarking: GPU contention and thermal throttling require separate evaluation. Normal `xtask perf` still produces reports if baseline promotion is refused. The pre-existing committed baseline is unchanged.
+Quick runs may use an existing quick baseline, but `--quick --update-baseline` is unsupported because quick mode intentionally omits configured benches without `quick_args`.
 
 **Perf runs.** `xtask perf` builds the benches in release (`perf_scenarios`, `interactive_bench`,
 `fx_bench`, `bevel_bench`, `type_bench`, `large_image_bench`, and `layout_bench` once it exists), runs each with
